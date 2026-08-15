@@ -15,46 +15,38 @@ export async function POST(req: Request) {
     const redFlags = ["chest pain", "difficulty breathing", "suicid", "severe bleeding", "stroke", "unconscious"];
     const isEmergency = redFlags.some(flag => query.toLowerCase().includes(flag));
 
-    // 2. Generate Embedding for Query
-    const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: query,
-    });
-    const queryEmbedding = embeddingResponse.data[0].embedding;
+    // 2. Search Supabase Database
+    // We will do a simple text search first. If no results, grab the first 3 verses.
+    let retrievedVerses: any[] = [];
 
-    // 3. Search Supabase (Vector + Text Fallback)
-    // Because we don't have RPC functions set up, we'll do a simple vector search + text search in JS
-    const { data: vectorData } = await supabase
-      .from('verses')
-      .select('id, english_translation, sanskrit_original, verse_number, chapter_id')
-      .not('embedding', 'is', null)
-      .limit(5);
-
-    // In a true app we'd use a DB function for cosine similarity. For now, we just grab all rows that have embeddings
-    // and let the LLM figure out the most relevant, OR we fallback to text search.
-    // To keep it simple for this test, let's just grab the sample data.
-    const { data: textData } = await supabase
+    const { data: textMatches } = await supabase
       .from('verses')
       .select('id, english_translation, sanskrit_original, verse_number')
       .ilike('english_translation', `%${query.split(' ')[0]}%`)
       .limit(5);
 
-    // If neither returns anything, just get the first 3 verses (since we only have 3 sample verses)
-    let retrievedVerses = (textData && textData.length > 0) ? textData : await supabase.from('verses').select('id, english_translation, sanskrit_original, verse_number').limit(3);
-    
-    // If data is nested inside a property, extract it
-    if (!Array.isArray(retrievedVerses)) {
-        retrievedVerses = (retrievedVerses as any).data || [];
+    if (textMatches && textMatches.length > 0) {
+      retrievedVerses = textMatches;
+    } else {
+      // Fallback: get first 3 verses
+      const { data: fallbackMatches } = await supabase
+        .from('verses')
+        .select('id, english_translation, sanskrit_original, verse_number')
+        .limit(3);
+        
+      if (fallbackMatches) {
+        retrievedVerses = fallbackMatches;
+      }
     }
 
-    if (!retrievedVerses || retrievedVerses.length === 0) {
+    if (retrievedVerses.length === 0) {
       return NextResponse.json({
         answer: "No relevant verses found in the database.",
         citations: [], specializations: [], confidence_note: "No data.", disclaimer: DISCLAIMER, is_emergency: isEmergency
       });
     }
 
-    // 4. Synthesize Answer
+    // 3. Synthesize Answer using OpenAI
     const context = retrievedVerses.map(v => `Verse ID: ${v.id}\nTranslation: ${v.english_translation}`).join("\n\n");
 
     const systemPrompt = `You are an Ayurvedic scholar AI. Answer using ONLY the provided context. 
