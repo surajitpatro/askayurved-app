@@ -13,6 +13,7 @@ interface ApiResponse {
   disclaimer: string;
   is_emergency: boolean;
   emergency_prompt?: string;
+  error?: string;
 }
 
 export default function Home() {
@@ -35,6 +36,15 @@ export default function Home() {
       setResult(data);
     } catch (error) {
       console.error("Error fetching data:", error);
+      setResult({
+        answer: "Failed to connect to the server.",
+        citations: [],
+        specializations: [],
+        confidence_note: "",
+        disclaimer: "",
+        is_emergency: false,
+        error: "Network error"
+      });
     } finally {
       setLoading(false);
     }
@@ -75,36 +85,48 @@ export default function Home() {
             </div>
           )}
 
-          <div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Answer</h2>
-            <div className="prose text-gray-700" dangerouslySetInnerHTML={{ __html: result.answer.replace(/\n/g, "<br/>") }} />
-          </div>
-
-          <div>
-            <h2 className="text-lg font-bold text-gray-800 mb-2">What the Classical Texts Say</h2>
-            <div className="space-y-3">
-              {result.citations.map((cite, i) => (
-                <div key={i} className="bg-parchment p-3 border-l-2 border-sage text-sm">
-                  <p className="italic text-gray-600">&quot;{cite.quote}&quot;</p>
-                  <p className="text-xs text-gray-500 mt-1">Verse ID: {cite.verse_id}</p>
-                </div>
-              ))}
+          {result.error ? (
+            <div className="bg-red-50 border-l-4 border-clay p-4 text-clay font-bold">
+              <p>Server Error: {result.error}. Please check API logs.</p>
             </div>
-          </div>
+          ) : (
+            <>
+              <div>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Answer</h2>
+                <div className="prose text-gray-700 whitespace-pre-wrap">{result.answer}</div>
+              </div>
 
-          <div className="text-sm text-gray-500">
-            <p className="font-bold">Relevant Specializations:</p>
-            <p>{result.specializations.join(", ")}</p>
-          </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-800 mb-2">What the Classical Texts Say</h2>
+                <div className="space-y-3">
+                  {result.citations && result.citations.length > 0 ? (
+                    result.citations.map((cite, i) => (
+                      <div key={i} className="bg-parchment p-3 border-l-2 border-sage text-sm">
+                        <p className="italic text-gray-600">&quot;{cite.quote}&quot;</p>
+                        <p className="text-xs text-gray-500 mt-1">Verse ID: {cite.verse_id}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500">No direct citations provided.</p>
+                  )}
+                </div>
+              </div>
 
-          <div className="text-sm text-gray-500 italic">
-            <p className="font-bold">Confidence Note:</p>
-            <p>{result.confidence_note}</p>
-          </div>
+              <div className="text-sm text-gray-500">
+                <p className="font-bold">Relevant Specializations:</p>
+                <p>{result.specializations.join(", ")}</p>
+              </div>
 
-          <div className="text-xs text-gray-400 border-t pt-4 mt-4">
-            {result.disclaimer}
-          </div>
+              <div className="text-sm text-gray-500 italic">
+                <p className="font-bold">Confidence Note:</p>
+                <p>{result.confidence_note}</p>
+              </div>
+
+              <div className="text-xs text-gray-400 border-t pt-4 mt-4">
+                {result.disclaimer}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
