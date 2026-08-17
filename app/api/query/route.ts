@@ -16,27 +16,14 @@ export async function POST(req: Request) {
     const isEmergency = redFlags.some(flag => query.toLowerCase().includes(flag));
 
     // 2. Search Supabase Database
-    // We will do a simple text search first. If no results, grab the first 3 verses.
     let retrievedVerses: any[] = [];
-
-    const { data: textMatches } = await supabase
+    const { data: fallbackMatches } = await supabase
       .from('verses')
       .select('id, english_translation, sanskrit_original, verse_number')
-      .ilike('english_translation', `%${query.split(' ')[0]}%`)
-      .limit(5);
-
-    if (textMatches && textMatches.length > 0) {
-      retrievedVerses = textMatches;
-    } else {
-      // Fallback: get first 3 verses
-      const { data: fallbackMatches } = await supabase
-        .from('verses')
-        .select('id, english_translation, sanskrit_original, verse_number')
-        .limit(3);
-        
-      if (fallbackMatches) {
-        retrievedVerses = fallbackMatches;
-      }
+      .limit(3);
+      
+    if (fallbackMatches && fallbackMatches.length > 0) {
+      retrievedVerses = fallbackMatches;
     }
 
     if (retrievedVerses.length === 0) {
@@ -50,7 +37,7 @@ export async function POST(req: Request) {
     const context = retrievedVerses.map(v => `Verse ID: ${v.id}\nTranslation: ${v.english_translation}`).join("\n\n");
 
     const systemPrompt = `You are an Ayurvedic scholar AI. Answer using ONLY the provided context. 
-    Output JSON: { "answer": "string", "citations": [{"verse_id": int, "quote": "string"}], "specializations": ["string"], "confidence_note": "string" }`;
+    Output strict JSON: { "answer": "string", "citations": [{"verse_id": int, "quote": "string"}], "specializations": ["string"], "confidence_note": "string" }`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -61,7 +48,10 @@ export async function POST(req: Request) {
       ],
     });
 
-    const parsed = JSON.parse(response.choices[0].message.content);
+    const rawResponse = response.choices[0].message.content;
+    const cleanJson = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleanJson);
+    
     parsed.disclaimer = DISCLAIMER;
     parsed.is_emergency = isEmergency;
     if (isEmergency) {
@@ -71,7 +61,15 @@ export async function POST(req: Request) {
     return NextResponse.json(parsed);
 
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error("API Error:", error);
+    return NextResponse.json({ 
+      answer: "An error occurred while searching the texts.",
+      citations: [], 
+      specializations: [], 
+      confidence_note: "Server error.", 
+      disclaimer: DISCLAIMER, 
+      is_emergency: false,
+      error: "Internal Server Error" 
+    }, { status: 500 });
   }
 }
